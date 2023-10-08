@@ -53,7 +53,7 @@ void moveForward(uint8_t speed, int time) {
 
 }
 
-void backward(uint8_t speed, int time) {
+void moveBackward(uint8_t speed, int time) {
   MotorLeft->run(BACKWARD);
   MotorLeft->setSpeed(speed);
   MotorRight->run(BACKWARD);
@@ -62,6 +62,23 @@ void backward(uint8_t speed, int time) {
   delay(time * 1000);  
   stopMotors();        
 }
+
+void turn(char direction, int angle) { //il faudra calculer le temps optimal, ou arrêter la rotation en se basant sur l'encodeur/accéléromètre
+
+  //float rotationTime = (float)angle / //vitesse angulaire à calculer !!!
+
+  // Tournez les moteurs dans des directions opposées pour tourner sur place
+  MotorLeft->run(FORWARD);
+  MotorLeft->setSpeed(155);
+  MotorRight->run(BACKWARD);
+  MotorRight->setSpeed(155);
+
+  delay(2 * 1000);  
+  stopMotors();                
+}
+
+
+
 
 void stopMotors() {
   MotorLeft->setSpeed(0);
