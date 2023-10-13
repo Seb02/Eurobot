@@ -1,108 +1,153 @@
-#include <Wire.h>
 #include <Adafruit_MotorShield.h>
-#include <utility/Adafruit_PWMServoDriver.h>
 
+// Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
-Adafruit_DCMotor *motor1 = AFMS.getMotor(1);
-Adafruit_DCMotor *motor2 = AFMS.getMotor(2);
 
-// Broches pour les encodeurs
-int encodeur1_pinA = 2;
-int encodeur1_pinB = 3;
-int encodeur2_pinA = 4;
-int encodeur2_pinB = 5;
+// Select which 'port' M1, M2, M3, or M4. In this case, M1
+// Moteur gauche
+Adafruit_DCMotor *MotorLeft = AFMS.getMotor(1);
+// Moteur droit
+Adafruit_DCMotor *MotorRight = AFMS.getMotor(2);
 
-// Variables pour le contrôleur PID
-double vitesse = 0.1;    // Vitesse cible en m/s
-double objectif = 40*vitesse/0.06;  // Vitesse cible en ticks par seconde
-double kp = 0.1;    // Coefficient proportionnel
-double ki = 0.01;   // Coefficient intégral
-double kd = 0.02;   // Coefficient dérivé
+// Define constants for encoder parameters
+const int ticksPerRevolution = 40; // Number of ticks per revolution
+const float wheelDiameter = 7.0;   // Diameter of the wheel in centimeters
 
-// Variables pour le contrôle PID
-int erreur_prec = 0;
-double integrale = 0;
+// Define variables for encoder counts
+volatile long leftEncoderTicks = 0;
+volatile long rightEncoderTicks = 0;
+
+// Function to calculate robot speed using encoder data
+float calculateRobotSpeed() {
+  // Calculate the distance traveled by each wheel
+  float leftDistance = (leftEncoderTicks / ticksPerRevolution) * wheelDiameter * 3.14159265;
+  float rightDistance = (rightEncoderTicks / ticksPerRevolution) * wheelDiameter * 3.14159265;
+  
+  // Calculate the average speed of the robot
+  float robotSpeed = (leftDistance + rightDistance) / 2.0;
+  return robotSpeed;
+}
+
+// Function for the PID controller
+void pidController(float targetSpeed, float currentSpeed) {
+  float Kp = 1.0;  // Proportional constant
+  float Ki = 0.1;  // Integral constant
+  float Kd = 0.01; // Derivative constant
+  
+  static float previousError = 0.0;
+  static float integral = 0.0;
+
+  // Calculate the error between the target and current speed
+  float error = targetSpeed - currentSpeed;
+  
+  // Calculate the integral term
+  integral += error;
+
+  // Calculate the derivative term
+  float derivative = error - previousError;
+
+  // Calculate the control signal
+  float controlSignal = Kp * error + Ki * integral + Kd * derivative;
+
+  // Apply the control signal to the motors
+  int motorSpeed = constrain(controlSignal, -255, 255); // Constrain the value to the motor speed range
+  MotorLeft->setSpeed(abs(motorSpeed));
+  MotorRight->setSpeed(abs(motorSpeed));
+
+  // Update previous error
+  previousError = error;
+}
+
+// Function to handle left encoder interrupt
+void leftEncoderISR() {
+  leftEncoderTicks++;
+}
+
+// Function to handle right encoder interrupt
+void rightEncoderISR() {
+  rightEncoderTicks++;
+}
 
 void setup() {
-  // Initialisation du shield moteur
-  AFMS.begin();
+  Serial.begin(9600); // Set up Serial library at 9600 bps
+  Serial.println("Start up");
 
-  // Configuration des broches des encodeurs en mode INPUT
-  pinMode(encodeur1_pinA, INPUT);
-  pinMode(encodeur1_pinB, INPUT);
-  pinMode(encodeur2_pinA, INPUT);
-  pinMode(encodeur2_pinB, INPUT);
+  if (!AFMS.begin()) { // Create with the default frequency 1.6KHz
+    // if (!AFMS.begin(1000)) { // OR with a different frequency, say 1KHz
+    Serial.println("Could not find Motor Shield. Check wiring.");
+    while (1);
+  }
+  Serial.println("Motor Shield found.");
+
+  // Set the speed to start, from 0 (off) to 255 (max speed)
+  MotorLeft->setSpeed(0);
+  MotorLeft->run(FORWARD);
+  // Turn on motor
+  MotorLeft->run(RELEASE);
+
+  // Attach interrupt service routines for encoders
+  attachInterrupt(digitalPinToInterrupt(2), leftEncoderISR, RISING); // Attach left encoder interrupt
+  attachInterrupt(digitalPinToInterrupt(3), rightEncoderISR, RISING); // Attach right encoder interrupt
 }
 
 void loop() {
-  // Lire les valeurs des encodeurs
-  int ticks_encodeur1 = lire_valeur_encodeur(encodeur1_pinA, encodeur1_pinB);
-  int ticks_encodeur2 = lire_valeur_encodeur(encodeur2_pinA, encodeur2_pinB);
+  float robotSpeed = calculateRobotSpeed();
 
-  // Calculer l'erreur de vitesse pour chaque moteur
-  int erreur_moteur1 = objectif - ticks_encodeur1;
-  int erreur_moteur2 = objectif - ticks_encodeur2;
+  // Set the target speed for the PID controller
+  float targetSpeed = 150.0; // Target speed
 
-  // Calculer la sortie PID pour chaque moteur
-  double sortie_pid_moteur1 = calcul_pid(erreur_moteur1);
-  double sortie_pid_moteur2 = calcul_pid(erreur_moteur2);
+  pidController(targetSpeed, robotSpeed);
 
-  // Définir la vitesse des moteurs en fonction de la sortie PID
-  motor1->setSpeed(abs(sortie_pid_moteur1));
-  motor2->setSpeed(abs(sortie_pid_moteur2));
+  delay(1000);
 
-  // Déterminer la direction des moteurs en fonction de la sortie PID
-  if (sortie_pid_moteur1 >= 0) {
-    motor1->run(FORWARD);
-  } else {
-    motor1->run(BACKWARD);
-  }
-
-  if (sortie_pid_moteur2 >= 0) {
-    motor2->run(FORWARD);
-  } else {
-    motor2->run(BACKWARD);
-  }
-
-  // Actualiser les valeurs précédentes
-  erreur_prec = erreur_moteur1;
-
-  // Mettre à jour l'intégrale
-  integrale += erreur_moteur1;
-
-  // Appliquer les commandes de vitesse aux moteurs
-  AFMS.getMotor(1)->run(FORWARD);
-  AFMS.getMotor(2)->run(FORWARD);
-
-  // Appliquer la fréquence de boucle appropriée
-  delay(100);
+  moveBackward(150, 2);
 }
 
-  // Fonction pour lire la valeur de l'encodeur
-int lire_valeur_encodeur(int pinA, int pinB) {
-  static int position = 0;  // Cette variable statique conserve la position actuelle de l'encodeur, qui est initialement définie à zéro. Elle est mise à jour à mesure que l'encodeur tourne.
-  static int lastEncoded = 0; // Cette variable statique conserve la valeur précédente de l'état de l'encodeur (combinaison binaire des signaux A et B).
-  static unsigned long lastMillis = 0;  // Cette variable statique conserve le temps (en millisecondes) de la dernière mise à jour de l'encodeur.
+void moveForward(uint8_t speed, int time) {
   
-  int MSB = digitalRead(pinA); // Lire l'état de la broche A
-  int LSB = digitalRead(pinB); // Lire l'état de la broche B
-  int encoded = (MSB << 1) | LSB; // Combinez les deux valeurs pour obtenir une valeur unique
+  MotorLeft->run(FORWARD);
+  MotorLeft->setSpeed(speed);
+  
+  MotorRight->run(FORWARD);
+  MotorRight->setSpeed(speed);
+  
 
-  // Vérifiez si l'état a changé et assez de temps s'est écoulé pour éviter les rebonds
-  if (encoded != lastEncoded && (millis() - lastMillis) > 10) {
-    if ((lastEncoded == 0b00 && encoded == 0b01) || (lastEncoded == 0b01 && encoded == 0b11) || (lastEncoded == 0b11 && encoded == 0b10) || (lastEncoded == 0b10 && encoded == 0b00)) {
-      // Sens horaire
-      position++;
-    } else if ((lastEncoded == 0b00 && encoded == 0b10) || (lastEncoded == 0b10 && encoded == 0b11) || (lastEncoded == 0b11 && encoded == 0b01) || (lastEncoded == 0b01 && encoded == 0b00)) {
-      // Sens anti-horaire
-      position--;
-    }
-    lastMillis = millis();
-  }
-  
-  lastEncoded = encoded;
-  
-  return position;  // La fonction retourne la nouvelle position de l'encodeur après avoir mis à jour sa valeur en fonction des rotations détectées.
+  delay(time * 1000);  // temps en millisecondes
+  stopMotors();
+
+
 }
 
+void moveBackward(uint8_t speed, int time) {
+  MotorLeft->run(BACKWARD);
+  MotorLeft->setSpeed(speed);
+  MotorRight->run(BACKWARD);
+  MotorRight->setSpeed(speed);
+
+  delay(time * 1000);  
+  stopMotors();        
+}
+
+void turn(char direction, int angle) { //il faudra calculer le temps optimal, ou arrêter la rotation en se basant sur l'encodeur/accéléromètre
+
+  //float rotationTime = (float)angle / //vitesse angulaire à calculer !!!
+
+  // Tournez les moteurs dans des directions opposées pour tourner sur place
+  MotorLeft->run(FORWARD);
+  MotorLeft->setSpeed(155);
+  MotorRight->run(BACKWARD);
+  MotorRight->setSpeed(155);
+
+  delay(2 * 1000);  
+  stopMotors();                
+}
+
+
+
+
+void stopMotors() {
+  MotorLeft->setSpeed(0);
+  MotorLeft->run(RELEASE);
+  MotorRight->setSpeed(0);
+  MotorRight->run(RELEASE);
 }
