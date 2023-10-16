@@ -16,6 +16,8 @@ const float wheelDiameter = 7.0;   // Diameter of the wheel in centimeters
 // Define variables for encoder counts
 volatile long leftEncoderTicks = 0;
 volatile long rightEncoderTicks = 0;
+const int LEFT_ENCODER_PIN = 2; // Digital pin for left encoder DO
+const int RIGHT_ENCODER_PIN = 3; // Digital pin for right encoder DO
 
 // Function to calculate robot speed using encoder data
 float calculateRobotSpeed() {
@@ -86,15 +88,15 @@ void setup() {
   MotorLeft->run(RELEASE);
 
   // Attach interrupt service routines for encoders
-  attachInterrupt(digitalPinToInterrupt(2), leftEncoderISR, RISING); // Attach left encoder interrupt
-  attachInterrupt(digitalPinToInterrupt(3), rightEncoderISR, RISING); // Attach right encoder interrupt
+  attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN), leftEncoderISR, RISING); // Attach left encoder interrupt
+  attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN), rightEncoderISR, RISING); // Attach right encoder interrupt
 }
 
 void loop() {
   float robotSpeed = calculateRobotSpeed();
 
   // Set the target speed for the PID controller
-  float targetSpeed = 150.0; // Target speed
+  float targetSpeed = 150.0; // Replace with your desired target speed
 
   pidController(targetSpeed, robotSpeed);
 
@@ -114,8 +116,6 @@ void moveForward(uint8_t speed, int time) {
 
   delay(time * 1000);  // temps en millisecondes
   stopMotors();
-
-
 }
 
 void moveBackward(uint8_t speed, int time) {
@@ -141,9 +141,6 @@ void turn(char direction, int angle) { //il faudra calculer le temps optimal, ou
   delay(2 * 1000);  
   stopMotors();                
 }
-
-
-
 
 void stopMotors() {
   MotorLeft->setSpeed(0);
